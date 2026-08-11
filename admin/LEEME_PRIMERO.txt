@@ -1,0 +1,29 @@
+ACTUALIZACIÓN ADMIN - GESTIÓN DE TÓTEMS
+
+Copiar estos archivos dentro de la carpeta admin respetando las rutas:
+
+src/App.jsx
+src/components/AdminLayout.jsx
+src/pages/Totems.jsx
+src/pages/Totems.css
+src/services/api.js
+
+La sección nueva queda disponible en:
+http://localhost:5174/totems
+
+Funciones incluidas:
+- Listar tótems
+- Buscar por usuario o nombre
+- Crear tótem
+- Editar usuario y nombre
+- Cambiar contraseña
+- Activar / desactivar
+- Ver último acceso
+- Ver cantidad de pedidos por tótem
+
+El usuario puede adaptarse por cliente, por ejemplo:
+CLIENTE_A_TOTEM_01
+MAPSA_TOTEM_01
+SILFAB_BARRA_01
+
+No requiere cambios nuevos en el backend si GET/POST/PUT /totems ya funcionan.
