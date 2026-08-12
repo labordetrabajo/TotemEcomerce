@@ -402,34 +402,36 @@ const qrWebhook = async (req, res) => {
 
       NO mostramos MP_WEBHOOK_SECRET.
     */
-    console.log("WEBHOOK DEBUG:", {
-      originalUrl: req.originalUrl,
-      queryDataId: req.query["data.id"] || null,
-      queryDataIdAlt: req.query.data_id || null,
-      bodyDataId: req.body?.data?.id || null,
+console.log("WEBHOOK DEBUG:", {
+  originalUrl: req.originalUrl,
+  queryDataId: req.query["data.id"] || null,
+  queryDataIdAlt: req.query.data_id || null,
+  bodyDataId: req.body?.data?.id || null,
 
-      hasSignature: Boolean(
-        req.headers["x-signature"]
-      ),
+  hasSignature: Boolean(
+    req.headers["x-signature"]
+  ),
 
-      signatureLength:
-        req.headers["x-signature"]?.length || 0,
+  signature:
+    req.headers["x-signature"] || null,
 
-      hasRequestId: Boolean(
-        req.headers["x-request-id"]
-      ),
+  signatureLength:
+    req.headers["x-signature"]?.length || 0,
 
-      requestId:
-        req.headers["x-request-id"] || null,
+  hasRequestId: Boolean(
+    req.headers["x-request-id"]
+  ),
 
-      hasWebhookSecret: Boolean(
-        process.env.MP_WEBHOOK_SECRET
-      ),
+  requestId:
+    req.headers["x-request-id"] || null,
 
-      webhookSecretLength:
-        (process.env.MP_WEBHOOK_SECRET || "").length,
-    });
+  hasWebhookSecret: Boolean(
+    process.env.MP_WEBHOOK_SECRET
+  ),
 
+  webhookSecretLength:
+    (process.env.MP_WEBHOOK_SECRET || "").length,
+});
     if (!mercadoPagoOrderId) {
       return res.status(400).json({
         error:
