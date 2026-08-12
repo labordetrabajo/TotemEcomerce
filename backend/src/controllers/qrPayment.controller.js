@@ -440,23 +440,94 @@ console.log("WEBHOOK DEBUG:", {
     }
 
     // Validación de firma de Mercado Pago
-    if (process.env.MP_WEBHOOK_SECRET) {
-WebhookSignatureValidator.validate({
-  xSignature:
-    req.headers["x-signature"],
+ if (process.env.MP_WEBHOOK_SECRET) {
+  const xSignature =
+    req.headers["x-signature"] || "";
 
-  xRequestId:
-    req.headers["x-request-id"],
+  const xRequestId =
+    req.headers["x-request-id"] || "";
 
-  dataId:
-    signatureDataId
-      ? signatureDataId.toLowerCase()
-      : signatureDataId,
+  const dataId =
+    String(signatureDataId || "").toLowerCase();
 
-  secret:
-    process.env.MP_WEBHOOK_SECRET,
-});
+  let ts = "";
+  let v1 = "";
+
+  for (const part of xSignature.split(",")) {
+    const index = part.indexOf("=");
+
+    if (index === -1) {
+      continue;
     }
+
+    const key =
+      part.slice(0, index).trim();
+
+    const value =
+      part.slice(index + 1).trim();
+
+    if (key === "ts") {
+      ts = value;
+    }
+
+    if (key === "v1") {
+      v1 = value;
+    }
+  }
+
+  const parts = [];
+
+  if (dataId) {
+    parts.push(`id:${dataId}`);
+  }
+
+  if (xRequestId) {
+    parts.push(
+      `request-id:${xRequestId}`
+    );
+  }
+
+  parts.push(`ts:${ts}`);
+
+  const manifest =
+    parts.join(";") + ";";
+
+  const computed =
+    crypto
+      .createHmac(
+        "sha256",
+        process.env.MP_WEBHOOK_SECRET
+      )
+      .update(manifest)
+      .digest("hex");
+
+  const firmaValida =
+    v1 &&
+    computed.length === v1.length &&
+    crypto.timingSafeEqual(
+      Buffer.from(computed),
+      Buffer.from(v1)
+    );
+
+  console.log("WEBHOOK HMAC DEBUG:", {
+    dataIdOriginal: signatureDataId,
+    dataIdFirmado: dataId,
+    ts,
+    manifest,
+    firmaValida,
+  });
+
+  if (!firmaValida) {
+    console.error(
+      "Firma inválida en webhook QR"
+    );
+
+    return res.status(401).json({
+      error:
+        "Firma del webhook QR inválida",
+    });
+  }
+}
 
     // Consultamos la orden real directamente a Mercado Pago
     const response = await fetch(
