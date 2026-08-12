@@ -388,10 +388,12 @@ const updatedOrder =
 
 const qrWebhook = async (req, res) => {
   try {
-    const mercadoPagoOrderId =
-      req.query["data.id"] ||
-      req.body?.data?.id ||
-      req.body?.id;
+const signatureDataId = req.query["data.id"];
+
+const mercadoPagoOrderId =
+  signatureDataId ||
+  req.body?.data?.id ||
+  req.body?.id;
 
     if (!mercadoPagoOrderId) {
       return res.status(400).json({
@@ -402,12 +404,12 @@ const qrWebhook = async (req, res) => {
     // En producción, si configuramos MP_WEBHOOK_SECRET,
     // validamos que la notificación venga realmente de Mercado Pago.
     if (process.env.MP_WEBHOOK_SECRET) {
-      WebhookSignatureValidator.validate({
-        xSignature: req.headers["x-signature"],
-        xRequestId: req.headers["x-request-id"],
-        dataId: String(mercadoPagoOrderId),
-        secret: process.env.MP_WEBHOOK_SECRET,
-      });
+ WebhookSignatureValidator.validate({
+  xSignature: req.headers["x-signature"],
+  xRequestId: req.headers["x-request-id"],
+  dataId: signatureDataId,
+  secret: process.env.MP_WEBHOOK_SECRET,
+});
     }
 
     // No confiamos solamente en el contenido del webhook.
