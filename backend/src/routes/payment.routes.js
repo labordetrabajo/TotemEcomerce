@@ -22,9 +22,15 @@ router.get(
   "/qr/status/:orderId",
   qrPaymentController.getQrPaymentStatus
 );
+
 router.post(
   "/qr/cancel/:orderId",
   qrPaymentController.cancelQrPayment
+);
+// Webhook viejo de Checkout Pro
+router.post(
+  "/qr/webhook",
+  qrPaymentController.qrWebhook
 );
 
 router.post("/webhook", paymentController.webhook);

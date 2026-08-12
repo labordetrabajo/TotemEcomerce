@@ -1,5 +1,10 @@
 const crypto = require("crypto");
 
+const {
+  WebhookSignatureValidator,
+  InvalidWebhookSignatureError,
+} = require("mercadopago");
+
 const orderService = require("../services/order.service");
 
 const createQrPayment = async (req, res) => {
@@ -381,8 +386,176 @@ const updatedOrder =
   }
 };
 
+const qrWebhook = async (req, res) => {
+  try {
+    const mercadoPagoOrderId =
+      req.query["data.id"] ||
+      req.body?.data?.id ||
+      req.body?.id;
+
+    if (!mercadoPagoOrderId) {
+      return res.status(400).json({
+        error: "No se recibió el ID de la orden de Mercado Pago",
+      });
+    }
+
+    // En producción, si configuramos MP_WEBHOOK_SECRET,
+    // validamos que la notificación venga realmente de Mercado Pago.
+    if (process.env.MP_WEBHOOK_SECRET) {
+      WebhookSignatureValidator.validate({
+        xSignature: req.headers["x-signature"],
+        xRequestId: req.headers["x-request-id"],
+        dataId: String(mercadoPagoOrderId),
+        secret: process.env.MP_WEBHOOK_SECRET,
+      });
+    }
+
+    // No confiamos solamente en el contenido del webhook.
+    // Consultamos la orden real directamente a Mercado Pago.
+    const response = await fetch(
+      `https://api.mercadopago.com/v1/orders/${mercadoPagoOrderId}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const mercadoPagoOrder = await response.json();
+
+    if (!response.ok) {
+      console.error(
+        "Error consultando orden del webhook en Mercado Pago:",
+        JSON.stringify(mercadoPagoOrder, null, 2)
+      );
+
+      return res.status(500).json({
+        error: "No se pudo consultar la orden en Mercado Pago",
+      });
+    }
+
+    /*
+      Cuando creamos el QR usamos:
+      external_reference: TOTEM_ORDER_123
+
+      De ahí recuperamos nuestra orden local.
+    */
+    const externalReference =
+      String(mercadoPagoOrder.external_reference || "");
+
+    const match =
+      externalReference.match(/^TOTEM_ORDER_(\d+)$/);
+
+    if (!match) {
+      return res.status(400).json({
+        error: "La orden no contiene una referencia TOTEM válida",
+      });
+    }
+
+    const orderId = Number(match[1]);
+
+    const order = await orderService.getById(orderId);
+
+    if (!order) {
+      return res.status(404).json({
+        error: "La orden local asociada no existe",
+      });
+    }
+
+    const mpStatus = mercadoPagoOrder.status;
+    const mpStatusDetail =
+      mercadoPagoOrder.status_detail;
+
+    let localStatus = "pending";
+    let paymentStatus = mpStatus || "created";
+
+    if (
+      mpStatus === "processed" &&
+      mpStatusDetail === "accredited"
+    ) {
+      localStatus = "paid";
+      paymentStatus = "approved";
+    } else if (
+      mpStatus === "canceled" ||
+      mpStatus === "cancelled"
+    ) {
+      localStatus = "cancelled";
+      paymentStatus = "cancelled";
+    } else if (mpStatus === "expired") {
+      localStatus = "expired";
+      paymentStatus = "expired";
+    } else if (mpStatus === "refunded") {
+      localStatus = "refunded";
+      paymentStatus = "refunded";
+    }
+
+    const paymentId =
+      mercadoPagoOrder.transactions
+        ?.payments?.[0]?.id;
+
+    let updatedOrder;
+
+    if (
+      localStatus === "expired" ||
+      localStatus === "cancelled"
+    ) {
+      updatedOrder =
+        await orderService.closeUnpaidOrder(
+          order.id,
+          localStatus
+        );
+    } else {
+      updatedOrder =
+        await orderService.updatePaymentInfo(
+          order.id,
+          {
+            status: localStatus,
+            paymentStatus,
+            ...(paymentId && {
+              paymentId: String(paymentId),
+            }),
+          }
+        );
+    }
+
+    console.log(
+      `Webhook QR procesado: orden ${order.id} -> ${updatedOrder.status}`
+    );
+
+    return res.status(200).json({
+      message: "Webhook QR procesado correctamente",
+      orderId: updatedOrder.id,
+      status: updatedOrder.status,
+    });
+  } catch (error) {
+    if (
+      error instanceof InvalidWebhookSignatureError
+    ) {
+      console.error(
+        "Firma inválida en webhook QR"
+      );
+
+      return res.status(401).json({
+        error: "Firma del webhook QR inválida",
+      });
+    }
+
+    console.error(
+      "Error procesando webhook QR:",
+      error
+    );
+
+    return res.status(500).json({
+      error: "Error procesando webhook QR",
+    });
+  }
+};
+
 module.exports = {
   createQrPayment,
   getQrPaymentStatus,
   cancelQrPayment,
+  qrWebhook,
 };
