@@ -441,19 +441,21 @@ console.log("WEBHOOK DEBUG:", {
 
     // Validación de firma de Mercado Pago
     if (process.env.MP_WEBHOOK_SECRET) {
-      WebhookSignatureValidator.validate({
-        xSignature:
-          req.headers["x-signature"],
+WebhookSignatureValidator.validate({
+  xSignature:
+    req.headers["x-signature"],
 
-        xRequestId:
-          req.headers["x-request-id"],
+  xRequestId:
+    req.headers["x-request-id"],
 
-        dataId:
-          signatureDataId,
+  dataId:
+    signatureDataId
+      ? signatureDataId.toLowerCase()
+      : signatureDataId,
 
-        secret:
-          process.env.MP_WEBHOOK_SECRET,
-      });
+  secret:
+    process.env.MP_WEBHOOK_SECRET,
+});
     }
 
     // Consultamos la orden real directamente a Mercado Pago
