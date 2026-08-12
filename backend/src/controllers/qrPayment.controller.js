@@ -388,50 +388,18 @@ const updatedOrder =
 
 const qrWebhook = async (req, res) => {
   try {
-    const signatureDataId = req.query["data.id"];
+    // El data.id usado para validar la firma
+    // debe salir del query param enviado por Mercado Pago.
+    const signatureDataId =
+      req.query["data.id"];
 
+    // Para consultar la orden aceptamos también
+    // el ID enviado en el body como respaldo.
     const mercadoPagoOrderId =
       signatureDataId ||
       req.body?.data?.id ||
       req.body?.id;
 
-    /*
-      DEBUG TEMPORAL
-      Sirve para ver exactamente qué está enviando
-      Mercado Pago en la prueba del webhook.
-
-      NO mostramos MP_WEBHOOK_SECRET.
-    */
-console.log("WEBHOOK DEBUG:", {
-  originalUrl: req.originalUrl,
-  queryDataId: req.query["data.id"] || null,
-  queryDataIdAlt: req.query.data_id || null,
-  bodyDataId: req.body?.data?.id || null,
-
-  hasSignature: Boolean(
-    req.headers["x-signature"]
-  ),
-
-  signature:
-    req.headers["x-signature"] || null,
-
-  signatureLength:
-    req.headers["x-signature"]?.length || 0,
-
-  hasRequestId: Boolean(
-    req.headers["x-request-id"]
-  ),
-
-  requestId:
-    req.headers["x-request-id"] || null,
-
-  hasWebhookSecret: Boolean(
-    process.env.MP_WEBHOOK_SECRET
-  ),
-
-  webhookSecretLength:
-    (process.env.MP_WEBHOOK_SECRET || "").length,
-});
     if (!mercadoPagoOrderId) {
       return res.status(400).json({
         error:
@@ -439,97 +407,30 @@ console.log("WEBHOOK DEBUG:", {
       });
     }
 
-    // Validación de firma de Mercado Pago
- if (process.env.MP_WEBHOOK_SECRET) {
-  const xSignature =
-    req.headers["x-signature"] || "";
+    // ==========================================
+    // VALIDACIÓN DE FIRMA DE MERCADO PAGO
+    // ==========================================
 
-  const xRequestId =
-    req.headers["x-request-id"] || "";
+    if (process.env.MP_WEBHOOK_SECRET) {
+      WebhookSignatureValidator.validate({
+        xSignature:
+          req.headers["x-signature"],
 
-  const dataId =
-    String(signatureDataId || "").toLowerCase();
+        xRequestId:
+          req.headers["x-request-id"],
 
-  let ts = "";
-  let v1 = "";
+        dataId:
+          signatureDataId,
 
-  for (const part of xSignature.split(",")) {
-    const index = part.indexOf("=");
-
-    if (index === -1) {
-      continue;
+        secret:
+          process.env.MP_WEBHOOK_SECRET,
+      });
     }
 
-    const key =
-      part.slice(0, index).trim();
+    // ==========================================
+    // CONSULTAMOS LA ORDEN REAL EN MERCADO PAGO
+    // ==========================================
 
-    const value =
-      part.slice(index + 1).trim();
-
-    if (key === "ts") {
-      ts = value;
-    }
-
-    if (key === "v1") {
-      v1 = value;
-    }
-  }
-
-  const parts = [];
-
-  if (dataId) {
-    parts.push(`id:${dataId}`);
-  }
-
-  if (xRequestId) {
-    parts.push(
-      `request-id:${xRequestId}`
-    );
-  }
-
-  parts.push(`ts:${ts}`);
-
-  const manifest =
-    parts.join(";") + ";";
-
-  const computed =
-    crypto
-      .createHmac(
-        "sha256",
-        process.env.MP_WEBHOOK_SECRET
-      )
-      .update(manifest)
-      .digest("hex");
-
-  const firmaValida =
-    v1 &&
-    computed.length === v1.length &&
-    crypto.timingSafeEqual(
-      Buffer.from(computed),
-      Buffer.from(v1)
-    );
-
-  console.log("WEBHOOK HMAC DEBUG:", {
-    dataIdOriginal: signatureDataId,
-    dataIdFirmado: dataId,
-    ts,
-    manifest,
-    firmaValida,
-  });
-
-  if (!firmaValida) {
-    console.error(
-      "Firma inválida en webhook QR"
-    );
-
-    return res.status(401).json({
-      error:
-        "Firma del webhook QR inválida",
-    });
-  }
-}
-
-    // Consultamos la orden real directamente a Mercado Pago
     const response = await fetch(
       `https://api.mercadopago.com/v1/orders/${mercadoPagoOrderId}`,
       {
@@ -537,7 +438,9 @@ console.log("WEBHOOK DEBUG:", {
         headers: {
           Authorization:
             `Bearer ${process.env.MP_ACCESS_TOKEN}`,
-          "Content-Type": "application/json",
+
+          "Content-Type":
+            "application/json",
         },
       }
     );
@@ -561,6 +464,16 @@ console.log("WEBHOOK DEBUG:", {
       });
     }
 
+    // ==========================================
+    // OBTENER NUESTRA ORDEN LOCAL
+    // ==========================================
+
+    /*
+      Cuando creamos el QR usamos:
+
+      external_reference: TOTEM_ORDER_123
+    */
+
     const externalReference =
       String(
         mercadoPagoOrder.external_reference ||
@@ -579,7 +492,8 @@ console.log("WEBHOOK DEBUG:", {
       });
     }
 
-    const orderId = Number(match[1]);
+    const orderId =
+      Number(match[1]);
 
     const order =
       await orderService.getById(orderId);
@@ -591,13 +505,19 @@ console.log("WEBHOOK DEBUG:", {
       });
     }
 
+    // ==========================================
+    // CONVERTIR ESTADO DE MERCADO PAGO
+    // ==========================================
+
     const mpStatus =
       mercadoPagoOrder.status;
 
     const mpStatusDetail =
       mercadoPagoOrder.status_detail;
 
-    let localStatus = "pending";
+    let localStatus =
+      "pending";
+
     let paymentStatus =
       mpStatus || "created";
 
@@ -626,8 +546,13 @@ console.log("WEBHOOK DEBUG:", {
     }
 
     const paymentId =
-      mercadoPagoOrder.transactions
+      mercadoPagoOrder
+        .transactions
         ?.payments?.[0]?.id;
+
+    // ==========================================
+    // ACTUALIZAR ORDEN LOCAL
+    // ==========================================
 
     let updatedOrder;
 
@@ -645,7 +570,9 @@ console.log("WEBHOOK DEBUG:", {
         await orderService.updatePaymentInfo(
           order.id,
           {
-            status: localStatus,
+            status:
+              localStatus,
+
             paymentStatus,
 
             ...(paymentId && {
@@ -663,10 +590,18 @@ console.log("WEBHOOK DEBUG:", {
     return res.status(200).json({
       message:
         "Webhook QR procesado correctamente",
-      orderId: updatedOrder.id,
-      status: updatedOrder.status,
+
+      orderId:
+        updatedOrder.id,
+
+      status:
+        updatedOrder.status,
     });
   } catch (error) {
+    // ==========================================
+    // FIRMA INVÁLIDA
+    // ==========================================
+
     if (
       error instanceof
       InvalidWebhookSignatureError
@@ -680,6 +615,10 @@ console.log("WEBHOOK DEBUG:", {
           "Firma del webhook QR inválida",
       });
     }
+
+    // ==========================================
+    // OTRO ERROR
+    // ==========================================
 
     console.error(
       "Error procesando webhook QR:",
