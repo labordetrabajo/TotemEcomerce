@@ -410,7 +410,24 @@ const qrWebhook = async (req, res) => {
     // ==========================================
     // VALIDACIÓN DE FIRMA DE MERCADO PAGO
     // ==========================================
+    console.log("WEBHOOK APP DEBUG:", {
+  applicationId:
+    req.body?.application_id || null,
 
+  dataId:
+    req.query["data.id"] || null,
+
+  externalReference:
+    req.query["data.external_reference"] ||
+    req.body?.data?.external_reference ||
+    null,
+
+  liveMode:
+    req.body?.live_mode ?? null,
+
+  userId:
+    req.body?.user_id || null,
+});
     if (process.env.MP_WEBHOOK_SECRET) {
       WebhookSignatureValidator.validate({
         xSignature:
