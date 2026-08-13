@@ -390,15 +390,17 @@ const qrWebhook = async (req, res) => {
   try {
     // El data.id usado para validar la firma
     // debe salir del query param enviado por Mercado Pago.
-    const signatureDataId =
-      req.query["data.id"];
+const queryDataId = req.query["data.id"];
 
-    // Para consultar la orden aceptamos también
-    // el ID enviado en el body como respaldo.
-    const mercadoPagoOrderId =
-      signatureDataId ||
-      req.body?.data?.id ||
-      req.body?.id;
+const signatureDataId =
+  typeof queryDataId === "string"
+    ? queryDataId.toLowerCase()
+    : queryDataId;
+
+const mercadoPagoOrderId =
+  queryDataId ||
+  req.body?.data?.id ||
+  req.body?.id;
 
     if (!mercadoPagoOrderId) {
       return res.status(400).json({
